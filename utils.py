@@ -371,10 +371,7 @@ def normalize_text(text: str) -> str:
     Normalizes compatibility characters (such as mathematical bold/italic styled fonts)
     to their standard representation to bypass anti-spam filters.
     """
-    import unicodedata
-    if not isinstance(text, str) or not text:
-        return text
-    return unicodedata.normalize('NFKC', text)
+    return text
 
 def parse_spintax(text: str) -> str:
     """
