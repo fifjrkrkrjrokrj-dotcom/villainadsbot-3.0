@@ -56,7 +56,7 @@ async def show_admin_panel(event, user_id: int):
             utils.styled_button("💎 Set TON", "admin_set_ton", style="primary")
         ],
         [
-            utils.styled_button("👥 Join All", "admin_join_all_sessions", style="primary"),
+            utils.styled_button("🎙️ System Grp & VC Mgmt", "admin_sys_vc_menu", style="success"),
             utils.styled_button("🔗 Auto-Joins", "admin_set_ub_joins", style="primary"),
             utils.styled_button("👤 User Manager", "admin_manage_users", style="primary")
         ],
@@ -95,23 +95,128 @@ def register_handlers(client):
     async def admin_menu_callback(event):
         await show_admin_panel(event, event.sender_id)
 
-    @client.on(events.CallbackQuery(pattern="^admin_join_all_sessions$"))
-    async def admin_join_all_sessions_callback(event):
+    @client.on(events.CallbackQuery(pattern="^admin_sys_vc_menu$"))
+    async def admin_sys_vc_menu_callback(event):
         user_id = event.sender_id
         if not check_admin(user_id):
             return
-        _admin_action_states[user_id] = "WAITING_FOR_JOIN_ALL_SESSIONS"
-        prompt_text = (
-            "👥 **System Join ALL Userbots to Group**\n"
-            "━━━━━━━━━━━━━━━━━━━━\n"
-            "> Send the **Group invite link** or **Username** below.\n\n"
-            "⚠️ **ALL userbot sessions in the database (whether ON or OFF)** will auto-start and join this group!"
+            
+        all_sessions = database.get_sessions()
+        total = len(all_sessions)
+        
+        text = (
+            f"🎙️ **SYSTEM-WIDE BOT MANAGEMENT**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"> **Total Bots in DB**: **{total}**\n\n"
+            f"⚠️ **WARNING**: These actions will command ALL {total} bots in the database.\n"
+            f"If a bot is currently STOPPED, it will be temporarily started to execute the action.\n\n"
+            f"👥 **System Group Actions**:\n"
+            f"• Join Group: All {total} bots join a group via link.\n"
+            f"• Leave Group: All {total} bots leave a group/channel.\n\n"
+            f"🎙️ **System VC Actions**:\n"
+            f"• Join VC: Connect all {total} bots to group voice chat.\n"
+            f"• Leave VC: Disconnect all {total} bots from voice chat.\n\n"
+            f"🎵 **System Media Actions**:\n"
+            f"• Play Song: Stream audio/video on all {total} bots."
         )
-        buttons = [[utils.styled_button("🔙 Cancel", "menu_admin", style="danger")]]
+        
+        buttons = [
+            [
+                utils.styled_button("🔗 System Join Group", "admin_sys_join_grp", style="success"),
+                utils.styled_button("❌ System Leave Group", "admin_sys_leave_grp", style="danger")
+            ],
+            [
+                utils.styled_button("🎙️ System Join VC", "admin_sys_join_vc", style="success"),
+                utils.styled_button("🔴 System Leave VC", "admin_sys_leave_vc", style="danger")
+            ],
+            [
+                utils.styled_button("🎵 System Play Song", "admin_sys_play_song", style="primary")
+            ],
+            [
+                utils.styled_button("🔙 Back to Admin Panel", "menu_admin", style="primary")
+            ]
+        ]
+        
+        try:
+            await event.edit(text, buttons=buttons)
+        except Exception:
+            await event.respond(text, buttons=buttons)
+
+    # Reusable prompt function for system actions
+    async def _prompt_sys_action(event, action_key, title, instructions):
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+        _admin_action_states[user_id] = action_key
+        prompt_text = (
+            f"👑 **{title}**\n"
+            f"━━━━━━━━━━━━━━━━━━━━\n"
+            f"{instructions}\n\n"
+            f"⚠️ **ALL userbot sessions in the database (whether ON or OFF)** will execute this!"
+        )
+        buttons = [[utils.styled_button("🔙 Cancel", "admin_sys_vc_menu", style="danger")]]
         try:
             await event.edit(prompt_text, buttons=buttons)
         except Exception:
             await event.respond(prompt_text, buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern="^admin_sys_join_grp$"))
+    async def admin_sys_join_grp_callback(event):
+        await _prompt_sys_action(event, "WAITING_FOR_SYS_JOIN_GRP", "System Join Group", "> Send the **Group invite link** or **Username** below.")
+
+    @client.on(events.CallbackQuery(pattern="^admin_sys_leave_grp$"))
+    async def admin_sys_leave_grp_callback(event):
+        await _prompt_sys_action(event, "WAITING_FOR_SYS_LEAVE_GRP", "System Leave Group", "> Send the **Group invite link** or **Username/ID** below to leave.")
+
+    @client.on(events.CallbackQuery(pattern="^admin_sys_join_vc$"))
+    async def admin_sys_join_vc_callback(event):
+        await _prompt_sys_action(event, "WAITING_FOR_SYS_JOIN_VC", "System Join VC", "> Send the **Group invite link** or **Username/ID** below to join its active Voice Chat.")
+
+    @client.on(events.CallbackQuery(pattern="^admin_sys_leave_vc$"))
+    async def admin_sys_leave_vc_callback(event):
+        # Leave VC does not need a prompt since it just disconnects from current VC
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+        _admin_action_states[user_id] = "EXECUTE_SYS_LEAVE_VC"
+        prompt_text = "⚠️ Are you sure you want to disconnect ALL bots from their current Voice Chats?"
+        buttons = [
+            [utils.styled_button("✅ Confirm Leave VC (All)", "confirm_sys_leave_vc", style="danger")],
+            [utils.styled_button("🔙 Cancel", "admin_sys_vc_menu", style="primary")]
+        ]
+        try:
+            await event.edit(prompt_text, buttons=buttons)
+        except Exception:
+            await event.respond(prompt_text, buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern="^confirm_sys_leave_vc$"))
+    async def confirm_sys_leave_vc_callback(event):
+        user_id = event.sender_id
+        if not check_admin(user_id) or _admin_action_states.get(user_id) != "EXECUTE_SYS_LEAVE_VC":
+            return
+        
+        all_sessions = database.get_sessions()
+        total = len(all_sessions)
+        progress_msg = await event.reply(f"⏳ **Disconnecting {total} bots from Voice Chats...**")
+        
+        import userbot_manager
+        success_count = 0
+        for s in all_sessions:
+            phone_num = s["phone"]
+            if userbot_manager.is_bot_running(phone_num):
+                bot_obj = userbot_manager._running_bots.get(phone_num)
+                if bot_obj and getattr(bot_obj, "current_vc_chat_id", None):
+                    await bot_obj.leave_voice_chat()
+                    success_count += 1
+                    
+        await progress_msg.delete()
+        _admin_action_states.pop(user_id, None)
+        await event.reply(f"✅ **System Leave VC Complete**\nDisconnected {success_count} bots.")
+        await admin_sys_vc_menu_callback(event)
+
+    @client.on(events.CallbackQuery(pattern="^admin_sys_play_song$"))
+    async def admin_sys_play_song_callback(event):
+        await _prompt_sys_action(event, "WAITING_FOR_SYS_PLAY_SONG", "System Play Song", "> Send the **Song Name**, **YouTube Link**, or `/play <name>` below to stream on all connected bots.")
 
     @client.on(events.CallbackQuery(pattern="^admin_owner_all_bots$"))
     async def admin_owner_all_bots_callback(event):
@@ -119,7 +224,7 @@ def register_handlers(client):
         if not check_admin(user_id):
             return
         from handlers.my_bots import show_all_slots_dashboard
-        await show_all_slots_dashboard(event, user_id, flash_message="👑 **Owner Panel**: Controlling ALL userbots in system!")
+        await show_all_slots_dashboard(event, user_id, flash_message="👑 **Owner Panel**: Controlling ALL userbots in system!", fetch_all=True)
 
     @client.on(events.CallbackQuery(pattern="^cancel_admin_plan$"))
     async def cancel_admin_plan_callback(event):
@@ -264,7 +369,10 @@ def register_handlers(client):
             await event.respond(utils.get_text("error_not_admin", lang))
             return
             
-        text = "👥 **Administrator Management**\n\nChoose an option below:"
+        global_settings = database.get_global_settings()
+        admins = global_settings.get("admins", [])
+        admin_list = "\n".join([f"• `{a}`" for a in admins])
+        text = f"👑 **Administrator Management**\n\n**Current Admins:**\n{admin_list}\n\nChoose an option below:"
         buttons = [
             [
                 utils.styled_button("➕ Add Admin", "admin_add_admin", style="success"),
@@ -549,46 +657,78 @@ def register_handlers(client):
                     global_settings["userbot_auto_join_links"] = [x.strip() for x in val_str.split(",") if x.strip()]
                 success = True
                 
-            # 6.2.3 Join All Sessions collective task (System-wide for ALL DB accounts, running or stopped)
-            elif action == "WAITING_FOR_JOIN_ALL_SESSIONS":
+            # System-wide collective tasks for ALL DB accounts (running or stopped)
+            elif action in ["WAITING_FOR_SYS_JOIN_GRP", "WAITING_FOR_SYS_LEAVE_GRP", "WAITING_FOR_SYS_JOIN_VC", "WAITING_FOR_SYS_PLAY_SONG"]:
                 link = val_str
                 all_sessions = database.get_sessions()
                 total = len(all_sessions)
                 if not total:
                     await event.reply("❌ No userbot sessions found in database.")
-                    await show_admin_panel(event, user_id)
+                    await admin_sys_vc_menu_callback(event)
                     return
                     
-                progress_msg = await event.reply(f"⏳ **Starting & Joining target group on all {total} userbots in DB...**")
+                action_name_map = {
+                    "WAITING_FOR_SYS_JOIN_GRP": "Join Group",
+                    "WAITING_FOR_SYS_LEAVE_GRP": "Leave Group",
+                    "WAITING_FOR_SYS_JOIN_VC": "Join Voice Chat",
+                    "WAITING_FOR_SYS_PLAY_SONG": "Play Song"
+                }
+                action_name = action_name_map[action]
                 
-                from userbot import join_channel_single
+                progress_msg = await event.reply(f"⏳ **Executing '{action_name}' on all {total} bots...**\nPlease wait, this may take a while as offline bots will be temporarily started.")
+                
+                from userbot import join_channel_single, leave_channel_single
                 import userbot_manager
                 
-                async def _join_one_db_account(s):
+                async def _sys_action_one_db_account(s):
                     phone_num = s["phone"]
                     if not userbot_manager.is_bot_running(phone_num):
                         await userbot_manager.start_userbot(phone_num)
+                    
                     bot_obj = userbot_manager._running_bots.get(phone_num)
-                    if bot_obj and bot_obj.client:
+                    if not bot_obj or not bot_obj.client:
+                        return False
+                        
+                    if action == "WAITING_FOR_SYS_JOIN_GRP":
                         return await join_channel_single(bot_obj.client, link)
+                    elif action == "WAITING_FOR_SYS_LEAVE_GRP":
+                        return await leave_channel_single(bot_obj.client, link)
+                    elif action == "WAITING_FOR_SYS_JOIN_VC":
+                        try:
+                            # Note: join_voice_chat sends progress messages by default, we catch any text prints or errors.
+                            await bot_obj.join_voice_chat(link)
+                            return True
+                        except Exception as e:
+                            logger.error(f"Error in System Join VC for {phone_num}: {e}")
+                            return False
+                    elif action == "WAITING_FOR_SYS_PLAY_SONG":
+                        try:
+                            # Use query processing from userbot (youtube download or direct play)
+                            # We can just call play_song directly.
+                            await bot_obj.play_song(link)
+                            return True
+                        except Exception as e:
+                            logger.error(f"Error in System Play Song for {phone_num}: {e}")
+                            return False
                     return False
                     
-                results = await asyncio.gather(*[_join_one_db_account(s) for s in all_sessions], return_exceptions=True)
+                results = await asyncio.gather(*[_sys_action_one_db_account(s) for s in all_sessions], return_exceptions=True)
                 await progress_msg.delete()
                 
                 success_count = sum(1 for r in results if not isinstance(r, Exception) and r)
                 fail_count = total - success_count
                 
                 report = (
-                    f"📊 **System Join All Report**\n"
+                    f"📊 **System Action Report: {action_name}**\n"
                     f"━━━━━━━━━━━━━━━━━━━━\n"
-                    f"Target Link: {link}\n"
+                    f"Input: {link}\n"
                     f"Total Accounts in DB: **{total}**\n"
-                    f"✅ Successfully Joined: **{success_count}**\n"
+                    f"✅ Success: **{success_count}**\n"
                     f"❌ Failed: **{fail_count}**"
                 )
                 await event.reply(report)
-                await show_admin_panel(event, user_id)
+                _admin_action_states.pop(user_id, None)
+                await admin_sys_vc_menu_callback(event)
                 return
                 
             # 6.3 Set referral commission
@@ -754,6 +894,9 @@ def register_handlers(client):
                 utils.styled_button("🚫 Ban User", "admin_usr_ban_start", style="danger"),
                 utils.styled_button("🟢 Unban User", "admin_usr_unban_start", style="success")
             ],
+            [
+                utils.styled_button("🎮 Control Userbots", "admin_usr_ctrl_start", style="success")
+            ],
             [utils.styled_button("🔙 Back to Admin Panel", "menu_admin", style="primary")]
         ]
         
@@ -775,7 +918,8 @@ def register_handlers(client):
             "stats": "🔍 Send the User ID or Username of the user to view stats:",
             "ban": "🚫 Send the User ID or Username of the user to BAN:",
             "unban": "🟢 Send the User ID or Username of the user to UNBAN:",
-            "bal": "👛 Send the User ID or Username of the user to view and edit balance:"
+            "bal": "👛 Send the User ID or Username of the user to view and edit balance:",
+            "ctrl": "🎮 Send the User ID or Username of the user to open their UserBot Dashboard:"
         }
         
         buttons = [[utils.styled_button("🔙 Cancel", "admin_manage_users", style="danger")]]
@@ -801,6 +945,17 @@ def register_handlers(client):
             await process_admin_usr_search(event, str(target_uid), "stats")
         else:
             await event.answer("❌ User not found.", alert=True)
+
+    @client.on(events.CallbackQuery(pattern=r"^admin_usr_opendashtrg_(\d+)$"))
+    async def admin_usr_opendashtrg_callback(event):
+        target_uid = int(event.pattern_match.group(1))
+        user_id = event.sender_id
+        if not check_admin(user_id):
+            return
+        
+        from handlers.my_bots import show_all_slots_dashboard, set_admin_impersonation
+        set_admin_impersonation(user_id, target_uid)
+        await show_all_slots_dashboard(event, target_uid, flash_message=f"👑 **Admin Access**: Controlling UserBots for User `{target_uid}`")
 
     @client.on(events.CallbackQuery(pattern=r"^admin_usr_(addbal|subbal)_(\d+)$"))
     async def admin_usr_editbal_callback(event):
@@ -977,9 +1132,15 @@ async def process_admin_usr_search(event, search_query: str, action: str):
         
         buttons = [
             [utils.styled_button("🚫 Ban User" if not is_banned else "🟢 Unban User", f"admin_tglban_{target_id}", style="danger" if not is_banned else "success")],
+            [utils.styled_button("🎮 Control Userbots", f"admin_usr_opendashtrg_{target_id}", style="success")],
             [utils.styled_button("🔙 Back to User Management", "admin_manage_users", style="primary")]
         ]
         await event.reply(stats_text, buttons=buttons)
+        
+    elif action == "ctrl":
+        from handlers.my_bots import show_all_slots_dashboard, set_admin_impersonation
+        set_admin_impersonation(user_id, target_id)
+        await show_all_slots_dashboard(event, target_id, flash_message=f"👑 **Admin Access**: Controlling UserBots for User `{target_id}`")
         
     elif action == "ban":
         if target_id in config.ORIGINAL_ADMIN_IDS:

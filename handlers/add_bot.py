@@ -182,6 +182,7 @@ async def complete_login(bot_client, event, user_id: int, state: dict):
 
         # Disconnect temporary client so userbot_manager can start it properly
         await temp_client.disconnect()
+        await asyncio.sleep(2.0) # Give Windows OS time to release the file lock
         
         # Save session in database
         session_id = phone

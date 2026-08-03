@@ -72,8 +72,8 @@ async def show_main_menu(event, user_id):
     admins_list = global_settings.get("admins", [])
     is_admin = user_id in admins_list or user_id in config.ORIGINAL_ADMIN_IDS
     
-    support_channel = global_settings.get("support_channel") or "https://t.me/+Qzy2vnoy3g00OTE1"
-    support_group = global_settings.get("support_group") or "https://t.me/+DlgFzulC_JY5OWI1"
+    support_channel = global_settings.get("support_channel") or "https://t.me/TheVillainActive"
+    support_group = global_settings.get("support_group") or "https://t.me/+WzyoJkg4bzhlNTFl"
     
     # Configure main menu dashboard buttons
     buttons = [
@@ -87,16 +87,18 @@ async def show_main_menu(event, user_id):
         ],
         [
             styled_button("👫 Refer & Earn", "settings_referrals", style="success")
-        ],
-        [
-            Button.url(config.OWNER_1_NAME, config.OWNER_1_URL),
-            Button.url(config.OWNER_2_NAME, config.OWNER_2_URL)
-        ],
-        [
-            Button.url("📢 Support Channel", support_channel),
-            Button.url("💬 Support Group", support_group)
         ]
     ]
+    
+    owner_buttons = [Button.url(config.OWNER_1_NAME, config.OWNER_1_URL)]
+    if config.OWNER_2_URL and config.OWNER_2_URL != config.OWNER_1_URL:
+        owner_buttons.append(Button.url(config.OWNER_2_NAME, config.OWNER_2_URL))
+    
+    buttons.append(owner_buttons)
+    buttons.append([
+        Button.url("📢 Support Channel", support_channel),
+        Button.url("💬 Support Group", support_group)
+    ])
     
     if is_admin:
         buttons.append([styled_button(get_text("btn_admin_panel", lang), "menu_admin", style="primary")])

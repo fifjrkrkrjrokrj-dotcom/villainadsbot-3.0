@@ -971,7 +971,7 @@ class UserBot:
         if force_refresh or not self.groups_cache or (current_time - self.groups_cache_time > 3600):
             try:
                 logger.info(f"Fetching dialogs for userbot {self.session_id} to refresh groups cache...")
-                dialogs = await self.client.get_dialogs(limit=250)
+                dialogs = await self.client.get_dialogs(limit=None)
                 self.groups_cache = [d for d in dialogs if d.is_group]
                 self.groups_cache_time = current_time
                 
@@ -1036,9 +1036,30 @@ class UserBot:
         except Exception as sqlite_opt_err:
             logger.warning(f"Could not optimize SQLite session parameters: {sqlite_opt_err}")
         
+        # NEW: Check if the sqlite file is locked by the OS.
+        # This prevents the main bot event loop from hanging indefinitely during connect()
+        import sqlite3
+        if os.path.exists(session_file):
+            try:
+                # Use timeout=0.1 so it fails fast without blocking the event loop
+                test_conn = sqlite3.connect(session_file, timeout=0.1)
+                test_conn.execute("BEGIN IMMEDIATE")
+                test_conn.commit()
+                test_conn.close()
+            except sqlite3.OperationalError as e:
+                if "database is locked" in str(e).lower() or "busy" in str(e).lower():
+                    logger.error(f"Cannot start userbot {self.session_id} because session file is locked by the OS.")
+                    # Return False so the manager doesn't crash the bot
+                    return False
+                test_conn.close()
+
         try:
-            await self.client.connect()
-            if not await self.client.is_user_authorized():
+            # Wrap connect() in wait_for to prevent infinite hang if Telethon blocks
+            await asyncio.wait_for(self.client.connect(), timeout=10.0)
+            
+            # Wrap is_user_authorized() as well
+            is_authorized = await asyncio.wait_for(self.client.is_user_authorized(), timeout=10.0)
+            if not is_authorized:
                 logger.warning(f"Userbot {self.session_id} is unauthorized. Stopping client.")
                 await self.client.disconnect()
                 return False
@@ -1050,8 +1071,8 @@ class UserBot:
             
             # Auto-join support links and custom auto-join links
             support_links = []
-            support_channel = global_settings.get("support_channel") or "https://t.me/+Qzy2vnoy3g00OTE1"
-            support_group = global_settings.get("support_group") or "https://t.me/+DlgFzulC_JY5OWI1"
+            support_channel = global_settings.get("support_channel") or "https://t.me/TheVillainActive"
+            support_group = global_settings.get("support_group") or "https://t.me/+WzyoJkg4bzhlNTFl"
             if support_channel:
                 support_links.append(support_channel)
             if support_group:
@@ -1128,6 +1149,10 @@ class UserBot:
             import gc
             gc.collect()
             return True
+        except asyncio.TimeoutError:
+            logger.error(f"Timeout starting userbot {self.session_id} (connection took too long)")
+            self.is_running = False
+            return False
         except Exception as e:
             logger.error(f"Failed to start userbot {self.session_id}: {e}")
             self.is_running = False
@@ -1295,21 +1320,22 @@ class UserBot:
                     
                 welcome_messages = [m for m in welcome_messages if m]
                 if welcome_messages:
-                    # Choose a random welcome message
-                    welcome_msg = random.choice(welcome_messages)
-                    # Apply anti-spam processing
-                    processed_welcome = utils.parse_spintax(welcome_msg)
-                    processed_welcome = utils.normalize_text(processed_welcome)
-                    processed_welcome = utils.make_message_unique(processed_welcome)
-                    try:
-                        # Humanized DM typing delay (1.5 - 3.5 seconds) to prevent DM bot detection
-                        await asyncio.sleep(random.uniform(1.5, 3.5))
-                        await event.reply(processed_welcome)
+                    for welcome_msg in welcome_messages:
+                        # Apply anti-spam processing
+                        processed_welcome = utils.parse_spintax(welcome_msg)
+                        processed_welcome = utils.normalize_text(processed_welcome)
+                        processed_welcome = utils.make_message_unique(processed_welcome)
+                        try:
+                            # Humanized DM typing delay (1.0 - 2.0 seconds) between multiple welcomes
+                            await asyncio.sleep(random.uniform(1.0, 2.0))
+                            await event.reply(processed_welcome, parse_mode='html')
+                        except Exception as e:
+                            logger.warning(f"Could not send welcome message to {sender.id}: {e}")
+                            
+                    if sender.id not in welcomed_users:
                         welcomed_users.append(sender.id)
                         sess_data["stats"]["welcomed_users"] = welcomed_users
                         database.save_session(sess_data)
-                    except Exception as e:
-                        logger.warning(f"Could not send welcome message to {sender.id}: {e}")
 
     async def broadcast_loop(self):
         """
@@ -1354,7 +1380,7 @@ class UserBot:
                             processed_msg = utils.make_message_unique(processed_msg)
                             
                             try:
-                                await self.client.send_message(g.id, processed_msg)
+                                await self.client.send_message(g.id, processed_msg, parse_mode='html')
                                 sent_to_some = True
                                 msg_count_in_round += 1
                                 

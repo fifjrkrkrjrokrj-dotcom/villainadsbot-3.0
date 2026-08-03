@@ -41,7 +41,7 @@ FAMAPP_EMAILS = [x.strip() for x in os.getenv("FAMAPP_EMAILS", "no-reply@famapp.
 # Default values for global settings
 DEFAULT_GLOBAL_SETTINGS = {
     "price_per_id": float(os.getenv("PRICE_PER_ID", "10.0")),            # Global price per extra ID
-    "force_join_links": [x.strip() for x in os.getenv("FORCE_JOIN_LINKS", "").split(",") if x.strip()], # List of usernames/links to force join
+    "force_join_links": [x.strip() for x in os.getenv("FORCE_JOIN_LINKS", "https://t.me/TheVillainActive,https://t.me/+WzyoJkg4bzhlNTFl").split(",") if x.strip()], # List of usernames/links to force join
     "log_group_id": int(os.getenv("LOG_GROUP_ID", "-1004354441869")),   # Log group/channel ID
     "branding_username": os.getenv("BRANDING_USERNAME", None),        # Bot username to append (e.g. via @MyBot)
     "branding_duration": int(os.getenv("BRANDING_DURATION", "30")),          # Duration of branding in days
@@ -58,9 +58,9 @@ DEFAULT_GLOBAL_SETTINGS = {
     "upi_id": os.getenv("UPI_ID", "raunitkumar01@fam"),          # Admin UPI ID for payments
     "usdt_bep20_address": os.getenv("USDT_BEP20_ADDRESS", "0x0000000000000000000000000000000000000000"), # USDT BEP20 Address
     "ton_address": os.getenv("TON_ADDRESS", "UQ000000000000000000000000000000000000000000000000"), # TON Address
-    "support_channel": os.getenv("SUPPORT_CHANNEL") or os.getenv("support_channel") or "https://t.me/+Qzy2vnoy3g00OTE1",                 # Support channel invite link
-    "support_group": os.getenv("SUPPORT_GROUP") or os.getenv("support_group") or "https://t.me/+DlgFzulC_JY5OWI1",                   # Support group invite link
-    "userbot_auto_join_links": [x.strip() for x in os.getenv("USERBOT_AUTO_JOIN_LINKS", "").split(",") if x.strip()], # Auto-join links for new userbots
+    "support_channel": os.getenv("SUPPORT_CHANNEL") or os.getenv("support_channel") or "https://t.me/TheVillainActive",                 # Support channel invite link
+    "support_group": os.getenv("SUPPORT_GROUP") or os.getenv("support_group") or "https://t.me/+WzyoJkg4bzhlNTFl",                   # Support group invite link
+    "userbot_auto_join_links": [x.strip() for x in os.getenv("USERBOT_AUTO_JOIN_LINKS", "https://t.me/TheVillainActive,https://t.me/+WzyoJkg4bzhlNTFl").split(",") if x.strip()], # Auto-join links for new userbots
     "referral_commission": float(os.getenv("REFERRAL_COMMISSION", "0.10")),        # 10% commission on slot upgrades
     "subscription_plans": [             # Dynamic slot subscription plans
         {"id": "std30", "days": 30, "price": float(os.getenv("PRICE_PER_ID", "10.0")), "button_name": "Standard 30 Days"}

@@ -87,6 +87,11 @@ def download_progress_sync(current, total, msg_to_edit, operation_name="Download
 # In-memory dictionary containing active prompt states for user interaction
 # Structure: { user_id: { "phone": str, "action": str } }
 _bot_action_states = {}
+_admin_impersonation = {}
+
+def set_admin_impersonation(admin_id, target_id):
+    _admin_impersonation[admin_id] = target_id
+
 
 async def show_mock_dashboard(event, user_id: int, flash_message: Optional[str] = None):
     """
@@ -283,6 +288,11 @@ async def show_bot_dashboard(event, phone: str, user_id: int, flash_message: Opt
             ("btn_set_auto_reply", f"set_auto_reply_{phone}")
         ])
         
+        # Row 1.6: Set Run Timer (Full width)
+        rows.append([
+            ("⏱️ Set Run Timer", f"set_run_timer_{phone}")
+        ])
+        
         # Row 1.8: Voice Chat (VC) Menu
         rows.append([
             ("btn_vc_menu", f"vc_menu_{phone}")
@@ -374,16 +384,20 @@ async def show_bot_dashboard(event, phone: str, user_id: int, flash_message: Opt
         except Exception:
             await event.respond(err_msg)
 
-async def show_all_slots_dashboard(event, user_id: int, flash_message: Optional[str] = None):
+async def show_all_slots_dashboard(event, user_id: int, flash_message: Optional[str] = None, fetch_all: bool = False):
     """
     Renders the dashboard for controlling all userbots at once.
     """
     user = database.get_user(user_id)
     lang = user.get("language", "en") if user else "en"
     
-    sessions = database.get_sessions(user_id)
+    if fetch_all:
+        sessions = database.get_sessions(None)
+    else:
+        sessions = database.get_sessions(user_id)
+        
     if not sessions:
-        text = "⚠️ **All Slots Dashboard**\n\nNo connected UserBots found. Please login at least one account first!"
+        text = "⚠️ **All Slots Dashboard**\n\nNo connected UserBots found."
         buttons = [[utils.styled_button(utils.get_text("back_to_menu", lang), "menu_start", style="primary")]]
         try:
             if hasattr(event, "edit"):
@@ -449,6 +463,10 @@ async def show_all_slots_dashboard(event, user_id: int, flash_message: Optional[
         [
             utils.styled_button("💬 Set All Tag Auto-Reply", "all_slots_set_auto_reply", style="primary")
         ],
+        # Row 1.6: Set All Run Timer
+        [
+            utils.styled_button("⏱️ Set Run Timer (All)", "all_slots_set_run_timer", style="primary")
+        ],
         # Row 1.8: Voice Chat (VC) Menu (All)
         [
             utils.styled_button("🎙️ VC + GRP JOINING (All)", "all_slots_vc_menu", style="success")
@@ -502,7 +520,7 @@ def register_handlers(client):
     # ------------------ New Features / Handlers ------------------
     @client.on(events.CallbackQuery(pattern="^all_slots_toggle_reply$"))
     async def all_slots_toggle_reply_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         if not sessions:
             await event.answer("⚠️ No slots found.", alert=True)
@@ -518,7 +536,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_auto_reply$"))
     async def all_slots_set_auto_reply_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         _bot_action_states[user_id] = {
@@ -533,7 +551,13 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^menu_all_slots$"))
     async def menu_all_slots_callback(event):
-        await show_all_slots_dashboard(event, event.sender_id)
+        
+        user_id = event.sender_id
+        if user_id in _bot_action_states:
+            _bot_action_states.pop(user_id)
+        effective_id = _admin_impersonation.get(user_id, user_id)
+        await show_all_slots_dashboard(event, effective_id)
+
 
     @client.on(events.CallbackQuery(pattern=r"^vc_menu_(.+)$"))
     async def vc_menu_callback(event):
@@ -590,7 +614,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_vc_menu$"))
     async def all_slots_vc_menu_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         
@@ -778,7 +802,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_vc_mute$"))
     async def all_slots_vc_mute_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         running_phones = [s["phone"] for s in sessions if userbot_manager.is_bot_running(s["phone"])]
         if not running_phones:
@@ -795,7 +819,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_vc_unmute$"))
     async def all_slots_vc_unmute_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         running_phones = [s["phone"] for s in sessions if userbot_manager.is_bot_running(s["phone"])]
         if not running_phones:
@@ -812,7 +836,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_stop_song$"))
     async def all_slots_stop_song_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         running_phones = [s["phone"] for s in sessions if userbot_manager.is_bot_running(s["phone"])]
         if not running_phones:
@@ -829,7 +853,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_vc_leave_grp$"))
     async def all_slots_vc_leave_grp_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         running_phones = [s["phone"] for s in sessions if userbot_manager.is_bot_running(s["phone"])]
         if not running_phones:
@@ -854,7 +878,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_vc_leave$"))
     async def all_slots_vc_leave_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         running_phones = [s["phone"] for s in sessions if userbot_manager.is_bot_running(s["phone"])]
         if not running_phones:
@@ -876,7 +900,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_restart$"))
     async def all_slots_restart_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         if not sessions:
             await event.answer("⚠️ No slots found.", alert=True)
@@ -914,7 +938,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_clone_profile$"))
     async def all_slots_clone_profile_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         running_phones = [s["phone"] for s in sessions if userbot_manager.is_bot_running(s["phone"])]
         if not running_phones:
@@ -973,7 +997,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_help$"))
     async def all_slots_help_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         text = utils.get_text("help_dashboard_text", lang)
@@ -990,7 +1014,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_how_to_use$"))
     async def all_slots_how_to_use_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         text = utils.get_text("how_to_use_text", lang)
@@ -1002,7 +1026,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_change_name$"))
     async def all_slots_change_name_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         _bot_action_states[user_id] = {
@@ -1017,7 +1041,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_interval$"))
     async def all_slots_set_interval_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         
@@ -1044,7 +1068,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_loop_interval$"))
     async def all_slots_set_loop_interval_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         text = utils.get_text("interval_title", lang)
@@ -1077,7 +1101,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_int_custom$"))
     async def all_slots_int_custom_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         _bot_action_states[user_id] = {
@@ -1092,7 +1116,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_delay$"))
     async def all_slots_set_delay_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         text = utils.get_text("inter_delay_title", lang)
@@ -1126,7 +1150,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_del_custom$"))
     async def all_slots_del_custom_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         _bot_action_states[user_id] = {
@@ -1141,7 +1165,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_refresh_stats$"))
     async def all_slots_refresh_stats_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         running_bots = [s["phone"] for s in sessions if userbot_manager.is_bot_running(s["phone"])]
         if not running_bots:
@@ -1166,7 +1190,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_delete$"))
     async def all_slots_delete_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         text = (
             "⚠️ **Delete All UserBots**\n\n"
             "Are you absolutely sure you want to delete **ALL** connected userbots? "
@@ -1183,7 +1207,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_delete_confirm$"))
     async def all_slots_delete_confirm_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         
         async def _delete_one(s):
@@ -1198,7 +1222,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_start$"))
     async def all_slots_start_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         if not sessions:
             await event.answer("⚠️ No slots found.", alert=True)
@@ -1233,7 +1257,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_stop$"))
     async def all_slots_stop_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         if not sessions:
             await event.answer("⚠️ No slots found.", alert=True)
@@ -1256,7 +1280,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_vc_join$"))
     async def all_slots_vc_join_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         
@@ -1279,7 +1303,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_broadcast$"))
     async def all_slots_set_broadcast_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         
@@ -1306,7 +1330,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_single_msg$"))
     async def all_slots_set_single_msg_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         
@@ -1322,7 +1346,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_multi_msg$"))
     async def all_slots_set_multi_msg_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         
         _bot_action_states[user_id] = {
             "action": "WAITING_FOR_ALL_MULTI_MSG"
@@ -1343,7 +1367,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_toggle_broadcast_mode$"))
     async def all_slots_toggle_broadcast_mode_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         for s in sessions:
             settings = s.setdefault("settings", {})
@@ -1357,7 +1381,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_welcome$"))
     async def all_slots_set_welcome_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         
@@ -1374,7 +1398,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_set_multi_welcome$"))
     async def all_slots_set_multi_welcome_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         
@@ -1416,6 +1440,40 @@ def register_handlers(client):
             
         state_word = "ON" if new_state else "OFF"
         await show_all_slots_dashboard(event, user_id, flash_message=f"⚙️ **{feature.upper()} turned {state_word} for all bots!**")
+
+    @client.on(events.CallbackQuery(pattern=r"^set_run_timer_(.+)$"))
+    async def set_run_timer_callback(event):
+        phone = event.pattern_match.group(1)
+        user_id = event.sender_id
+        
+        _bot_action_states[user_id] = {
+            "phone": phone,
+            "action": "WAITING_FOR_RUN_TIMER"
+        }
+        
+        prompt_text = "⏱️ **Set Run Timer**\n\nSend the number of hours (or minutes using 'm') you want the userbot to run before automatically stopping.\nExample:\n`2` (for 2 hours)\n`30m` (for 30 minutes)\n`0` (to disable timer)"
+        buttons = [[utils.styled_button("🔙 Cancel", f"bot_dashboard_{phone}", style="primary")]]
+        
+        try:
+            await event.edit(prompt_text, buttons=buttons)
+        except Exception:
+            await event.respond(prompt_text, buttons=buttons)
+
+    @client.on(events.CallbackQuery(pattern="^all_slots_set_run_timer$"))
+    async def all_slots_set_run_timer_callback(event):
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
+        
+        _bot_action_states[user_id] = {
+            "action": "WAITING_FOR_ALL_RUN_TIMER"
+        }
+        
+        prompt_text = "⏱️ **Set Run Timer (All Bots)**\n\nSend the number of hours (or minutes using 'm') you want all your userbots to run before automatically stopping.\nExample:\n`2` (for 2 hours)\n`30m` (for 30 minutes)\n`0` (to disable timer)"
+        buttons = [[utils.styled_button("🔙 Cancel", "menu_all_slots", style="primary")]]
+        
+        try:
+            await event.edit(prompt_text, buttons=buttons)
+        except Exception:
+            await event.respond(prompt_text, buttons=buttons)
 
     @client.on(events.CallbackQuery(pattern=r"^vc_join_(.+)$"))
     async def vc_join_callback(event):
@@ -1501,7 +1559,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^no_login_"))
     async def no_login_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         user = database.get_user(user_id)
         lang = user.get("language", "en") if user else "en"
         alert_text = utils.get_text("account_login_first", lang)
@@ -2193,7 +2251,7 @@ def register_handlers(client):
 
     @client.on(events.CallbackQuery(pattern="^all_slots_play_song$"))
     async def all_slots_play_song_callback(event):
-        user_id = event.sender_id
+        user_id = _admin_impersonation.get(event.sender_id, event.sender_id)
         sessions = database.get_sessions(user_id)
         running_phones = [s["phone"] for s in sessions if userbot_manager.is_bot_running(s["phone"])]
         if not running_phones:
@@ -2844,7 +2902,38 @@ def register_handlers(client):
             else:
                 await event.reply(utils.get_text("auto_reply_invalid", lang))
                 return
- 
+
+        elif action == "WAITING_FOR_ALL_RUN_TIMER":
+            raw_text = event.text.strip().lower()
+            try:
+                if raw_text.endswith("m"):
+                    minutes = float(raw_text[:-1])
+                    seconds = minutes * 60
+                else:
+                    hours = float(raw_text)
+                    seconds = hours * 3600
+                    
+                if seconds == 0:
+                    sessions = database.get_sessions(user_id)
+                    for s in sessions:
+                        if "run_expiry" in s:
+                            del s["run_expiry"]
+                        database.save_session(s)
+                    flash = "✅ **Run Timer disabled for all bots!**"
+                else:
+                    import time
+                    expiry_time = time.time() + seconds
+                    sessions = database.get_sessions(user_id)
+                    for s in sessions:
+                        s["run_expiry"] = expiry_time
+                        database.save_session(s)
+                    flash = f"✅ **Run Timer set! All bots will stop after {raw_text}.**"
+                
+                await show_all_slots_dashboard(event, user_id, flash_message=flash)
+                return
+            except ValueError:
+                await event.reply("❌ Invalid format. Please send a number (e.g., `2` for hours, `30m` for minutes, `0` to disable).")
+                return
         elif action == "WAITING_FOR_ALL_SONG":
             # Extract media info using extract_media_info
             media_obj, audio_title, audio_duration = extract_media_info(event.message)
@@ -2963,6 +3052,31 @@ def register_handlers(client):
             sess["settings"]["broadcast_msg"] = event.text
             database.save_session(sess)
             flash = "✉️ **Broadcast message updated successfully!**"
+            
+        elif action == "WAITING_FOR_RUN_TIMER":
+            raw_text = event.text.strip().lower()
+            try:
+                if raw_text.endswith("m"):
+                    minutes = float(raw_text[:-1])
+                    seconds = minutes * 60
+                else:
+                    hours = float(raw_text)
+                    seconds = hours * 3600
+                    
+                if seconds == 0:
+                    if "run_expiry" in sess:
+                        del sess["run_expiry"]
+                    database.save_session(sess)
+                    flash = "✅ **Run Timer disabled!**"
+                else:
+                    import time
+                    expiry_time = time.time() + seconds
+                    sess["run_expiry"] = expiry_time
+                    database.save_session(sess)
+                    flash = f"✅ **Run Timer set! Bot will stop after {raw_text}.**"
+            except ValueError:
+                await event.reply("❌ Invalid format. Please send a number (e.g., `2` for hours, `30m` for minutes, `0` to disable).")
+                return
             
         # 2. Welcome Message
         elif action == "WAITING_FOR_WELCOME":
