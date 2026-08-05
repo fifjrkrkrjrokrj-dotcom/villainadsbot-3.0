@@ -31,8 +31,18 @@ from telethon.errors import (
     SlowModeWaitError,
     ChannelInvalidError,
     ChatIdInvalidError,
-    UserNotParticipantError
+    UserNotParticipantError,
+    UserDeactivatedError,
+    AuthKeyUnregisteredError
 )
+try:
+    from telethon.errors import SessionRevokedError
+except ImportError:
+    SessionRevokedError = None
+try:
+    from telethon.errors import SessionExpiredError
+except ImportError:
+    SessionExpiredError = None
 import config
 import database
 import utils
@@ -711,6 +721,56 @@ class UserBot:
                 self.broadcast_task = asyncio.create_task(self.broadcast_loop())
                 logger.info(f"Restarted broadcast loop for userbot {self.session_id} to apply new settings/interval immediately.")
 
+    async def _mark_unauthorized_and_cleanup(self):
+        """
+        Cleans up a deactivated or revoked session by disconnecting the client,
+        marking the database status as 'unauthorized', and deleting/renaming the session file.
+        """
+        logger.warning(f"Cleaning up unauthorized/deactivated userbot session: {self.session_id}")
+        self.is_running = False
+        
+        # 1. Disconnect client
+        if self.client:
+            try:
+                await self.client.disconnect()
+            except Exception as e:
+                logger.warning(f"Error disconnecting client during auth-cleanup for {self.session_id}: {e}")
+        
+        # 2. Update status in MongoDB database
+        sess_data = database.get_session(self.session_id)
+        if sess_data:
+            sess_data["status"] = "unauthorized"
+            sess_data["last_error"] = "❌ Account has been deactivated or session revoked from Telegram."
+            # Remove session bytes to save database space since they are invalid now
+            sess_data.pop("session_bytes", None)
+            database.save_session(sess_data)
+            
+        # 3. Remove local session files to prevent lockups and auto-healing retries
+        session_file = sess_data.get("session_file") if sess_data else None
+        if not session_file:
+            # Construct fallback path matching add_bot.py
+            user_id = sess_data.get("user_id") if sess_data else "temp"
+            user_dir = utils.ensure_user_dir(user_id)
+            session_file = os.path.join(user_dir, f"{self.session_id}.session")
+            
+        if session_file:
+            import glob
+            for f in glob.glob(session_file + "*"):
+                try:
+                    if os.path.exists(f):
+                        os.remove(f)
+                        logger.info(f"Deleted local session file during auth-cleanup: {f}")
+                except Exception as e:
+                    logger.warning(f"Could not delete session file {f} during auth-cleanup: {e}")
+                    
+        # 4. Remove from manager's running bots list locally to avoid circular import issues
+        try:
+            import userbot_manager
+            userbot_manager._running_bots.pop(self.session_id, None)
+            logger.info(f"Removed userbot {self.session_id} from running registry.")
+        except Exception as manager_err:
+            logger.warning(f"Could not remove bot {self.session_id} from manager registry: {manager_err}")
+
     async def join_voice_chat(self, link_or_id: str) -> tuple:
         """
         Attempts to join the active voice call of a group/channel using PyTgCalls.
@@ -1013,6 +1073,11 @@ class UserBot:
 
         if not os.path.exists(session_file):
             logger.error(f"Session file not found: {session_file}")
+            # Mark status stopped/unauthorized in database so it doesn't get retried
+            sess_data = database.get_session(self.session_id)
+            if sess_data:
+                sess_data["status"] = "stopped"
+                database.save_session(sess_data)
             return False
             
         # Spoof a deterministic device profile to avoid detection
@@ -1060,8 +1125,8 @@ class UserBot:
             # Wrap is_user_authorized() as well
             is_authorized = await asyncio.wait_for(self.client.is_user_authorized(), timeout=10.0)
             if not is_authorized:
-                logger.warning(f"Userbot {self.session_id} is unauthorized. Stopping client.")
-                await self.client.disconnect()
+                logger.warning(f"Userbot {self.session_id} is unauthorized. Cleaning up.")
+                await self._mark_unauthorized_and_cleanup()
                 return False
                 
             self.is_running = True
@@ -1152,10 +1217,25 @@ class UserBot:
         except asyncio.TimeoutError:
             logger.error(f"Timeout starting userbot {self.session_id} (connection took too long)")
             self.is_running = False
+            if self.client:
+                try:
+                    await self.client.disconnect()
+                except Exception:
+                    pass
             return False
         except Exception as e:
             logger.error(f"Failed to start userbot {self.session_id}: {e}")
             self.is_running = False
+            if self.client:
+                try:
+                    await self.client.disconnect()
+                except Exception:
+                    pass
+            
+            err_class = e.__class__.__name__
+            if err_class in ("UserDeactivatedError", "AuthKeyUnregisteredError", "SessionRevokedError", "SessionExpiredError"):
+                logger.warning(f"Detected deactivated/revoked session {self.session_id} on startup. Performing cleanup.")
+                await self._mark_unauthorized_and_cleanup()
             return False
 
     async def stop(self):
@@ -1416,7 +1496,13 @@ class UserBot:
                                 logger.debug(f"Cannot write to group {g.id} ({chat_err.__class__.__name__}). Skipping.")
                                 
                             except Exception as e:
-                                logger.warning(f"Failed to send broadcast message to group {g.id}: {e}")
+                                err_class = e.__class__.__name__
+                                if err_class in ("UserDeactivatedError", "AuthKeyUnregisteredError", "SessionRevokedError", "SessionExpiredError"):
+                                    logger.error(f"Userbot {self.session_id} broadcast failed with auth error: {e}. Cleaning up.")
+                                    await self._mark_unauthorized_and_cleanup()
+                                    break
+                                else:
+                                    logger.warning(f"Failed to send broadcast message to group {g.id}: {e}")
                                 
                         if sent_to_some:
                             sess_data = database.get_session(self.session_id)
