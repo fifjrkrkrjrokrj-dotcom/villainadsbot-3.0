@@ -969,8 +969,27 @@ class UserBot:
             
             if play_type == "video":
                 from pytgcalls.types import AudioVideoPiped
-                stream_obj = AudioVideoPiped(file_path)
-                logger.info(f"Streaming video (AudioVideoPiped): {file_path}")
+                from pytgcalls.types import VideoParameters
+                
+                w, h = 640, 360 # Default fallback
+                try:
+                    cmd = ["ffprobe", "-v", "error", "-select_streams", "v:0", "-show_entries", "stream=width,height", "-of", "csv=s=x:p=0", file_path]
+                    proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                    stdout, stderr = await proc.communicate()
+                    if proc.returncode == 0:
+                        res = stdout.decode().strip()
+                        if 'x' in res:
+                            parsed_w, parsed_h = map(int, res.split('x'))
+                            # Ensure dimensions are even numbers (often required by FFmpeg/PyTgCalls H264 encoder)
+                            w = parsed_w if parsed_w % 2 == 0 else parsed_w - 1
+                            h = parsed_h if parsed_h % 2 == 0 else parsed_h - 1
+                            logger.info(f"Detected original video resolution: {w}x{h}")
+                except Exception as e:
+                    logger.warning(f"Could not extract resolution, using default: {e}")
+                    
+                video_params = VideoParameters(width=w, height=h)
+                stream_obj = AudioVideoPiped(file_path, video_parameters=video_params)
+                logger.info(f"Streaming video (AudioVideoPiped): {file_path} at {w}x{h}")
             else:
                 stream_obj = AudioPiped(file_path)
                 
