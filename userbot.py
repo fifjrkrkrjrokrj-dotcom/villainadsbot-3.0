@@ -209,7 +209,7 @@ async def download_media(query: str, download_type: str = "audio") -> tuple:
                             ydl.download([youtube_url])
                     else:
                         ydl_opts = {
-                            'format': 'bestvideo[height<=720][ext=mp4]+bestaudio[ext=m4a]/best[ext=mp4]/best',
+                            'format': 'best[height<=720][ext=mp4]/best[ext=mp4]/best',
                             'outtmpl': os.path.join(DOWNLOAD_DIR, f"{vidid}.%(ext)s"),
                             'quiet': True,
                             'no_warnings': True,
