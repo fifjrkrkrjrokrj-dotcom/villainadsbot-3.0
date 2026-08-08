@@ -2614,13 +2614,14 @@ def register_handlers(client):
                                         )
                                 except Exception as ap_err:
                                     logger.warning(f"Autoplay loop failed: {ap_err}")
-                            file_path_cleanup = song_info_global.get("file_path")
-                            if file_path_cleanup and os.path.exists(file_path_cleanup) and "silence" not in file_path_cleanup:
-                                try:
-                                    os.remove(file_path_cleanup)
-                                    logger.info(f"Deleted local song file: {file_path_cleanup}")
-                                except Exception as e:
-                                    logger.warning(f"Could not delete local file {file_path_cleanup}: {e}")
+                            else:
+                                file_path_cleanup = song_info_global.get("file_path")
+                                if file_path_cleanup and os.path.exists(file_path_cleanup) and "silence" not in file_path_cleanup:
+                                    try:
+                                        os.remove(file_path_cleanup)
+                                        logger.info(f"Deleted local song file: {file_path_cleanup}")
+                                    except Exception as e:
+                                        logger.warning(f"Could not delete local file {file_path_cleanup}: {e}")
                         asyncio.create_task(auto_delete_and_autoplay())
                 else:
                     detailed_error = error_details[0] if error_details else "Failed to play on any active Voice Chat."

@@ -950,8 +950,22 @@ class UserBot:
         thumb = None
         
         if local_file:
+            if not os.path.exists(local_file):
+                return False, f"Local file not found: {local_file}", None
             file_path = local_file
             title = title or "Uploaded Audio"
+            
+            # Extract accurate duration using ffprobe for local files
+            try:
+                import subprocess
+                cmd = ["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", file_path]
+                proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+                stdout, _ = await proc.communicate()
+                if proc.returncode == 0 and stdout:
+                    duration = int(float(stdout.decode().strip()))
+            except Exception as e:
+                pass
+                
             duration = duration or 30
         else:
             # Download the media
