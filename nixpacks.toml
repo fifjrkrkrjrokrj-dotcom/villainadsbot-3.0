@@ -1,5 +1,5 @@
 [phases.setup]
-nixPkgs = ["python311", "ffmpeg", "nodejs"]
+nixPkgs = ["python311", "ffmpeg"]
 
 [phases.install]
 cmds = ["pip install --no-cache-dir -r requirements.txt"]

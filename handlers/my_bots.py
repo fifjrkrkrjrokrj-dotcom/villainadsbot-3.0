@@ -2493,30 +2493,32 @@ def register_handlers(client):
                 audio_title = None
                 audio_duration = 30
                 
+                target_msg = event.message
                 if event.message.is_reply:
-                    reply_msg = await event.get_reply_message()
-                    media_obj, audio_title, audio_duration = extract_media_info(reply_msg)
-                    if media_obj:
-                        replied_audio = reply_msg
-                        progress_download = await event.reply("📥 **Downloading replied media file...**\n━━━━━━━━━━━━━━━━━━━━\n📊 Progress: `[░░░░░░░░░░] 0.0%`")
+                    target_msg = await event.get_reply_message()
+                    
+                media_obj, audio_title, audio_duration = extract_media_info(target_msg)
+                if media_obj:
+                    replied_audio = target_msg
+                    progress_download = await event.reply("📥 **Downloading media file...**\n━━━━━━━━━━━━━━━━━━━━\n📊 Progress: `[░░░░░░░░░░] 0.0%`")
+                    try:
+                        local_file_path = await client.download_media(
+                            replied_audio, 
+                            file="downloads/",
+                            progress_callback=lambda c, t: download_progress_sync(c, t, progress_download, "Downloading media file")
+                        )
+                    except Exception as dl_err:
+                        logger.error(f"Failed to download media: {dl_err}")
+                        await progress_download.edit(f"❌ **Failed to download media:** {dl_err}")
+                        return
+                    finally:
                         try:
-                            local_file_path = await client.download_media(
-                                replied_audio, 
-                                file="downloads/",
-                                progress_callback=lambda c, t: download_progress_sync(c, t, progress_download, "Downloading replied media file")
-                            )
-                        except Exception as dl_err:
-                            logger.error(f"Failed to download replied media: {dl_err}")
-                            await progress_download.edit(f"❌ **Failed to download media:** {dl_err}")
-                            return
-                        finally:
-                            try:
-                                await progress_download.delete()
-                            except Exception:
-                                pass
+                            await progress_download.delete()
+                        except Exception:
+                            pass
                 
                 if not query and not replied_audio:
-                    await event.reply("❌ Please provide a song/video name/link, or reply to an audio file.\nFormat: `/play <songname>` or `/vplay <songname>`")
+                    await event.reply("❌ Please provide a song/video name/link, or reply to/upload an audio/video file.\nFormat: `/play <songname>` or `/vplay <songname>`")
                     return
                     
                 play_type = "video" if cmd == "/vplay" else "audio"

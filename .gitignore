@@ -1,31 +1,23 @@
-# Python Cache
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Environment and Secrets
+*.pyc
 .env
+.env.*
 
-# Local JSON database fallbacks
-db_*.json
+# Telegram session files & backups - NEVER commit these
+*.session
+*.session-shm
+*.session-wal
+sessions/
+personal_ads_bot/sessions/
+personal_ads_bot/zips/
+personal_ads_bot/downloads/
+personal_ads_bot/*.log
 
-# Virtual Environments
-.venv/
-venv/
-ENV/
-
-# IDE/OS files
-.idea/
-.vscode/
-Thumbs.db
-Desktop.ini
-
-# App-specific runtime paths
-user_data/
-logs/
-bot_session*
-*.session*
-*.session-journal
-
-# App downloads
+# Runtime folders with private data
 downloads/
+logs/
+user_data/
+*.log
+
+cloudflared.exe
+node_modules/
